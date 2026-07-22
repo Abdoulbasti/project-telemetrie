@@ -23,6 +23,30 @@ services:
     volumes:
       - ./web:/app
       - /app/node_modules
+    environment:
+      DATABASE_URL: postgres://shop:${WEBAPP_DB_PASSWORD}@webapp-postgres:5432/shop
+      SESSION_SECRET: ${WEBAPP_SESSION_SECRET}
+    depends_on:
+      webapp-postgres:
+        condition: service_healthy
+    networks: [webapp-net]
+    restart: unless-stopped
+
+  webapp-postgres:
+    image: postgres:16.8-alpine
+    container_name: webapp-postgres
+    environment:
+      POSTGRES_USER: shop
+      POSTGRES_PASSWORD: ${WEBAPP_DB_PASSWORD}
+      POSTGRES_DB: shop
+    volumes:
+      - webapp-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U shop -d shop"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [webapp-net]
     restart: unless-stopped
 
   # ==========================================================
@@ -143,11 +167,13 @@ services:
 
 # Réseaux isolés : les bases de données ne sont jamais exposées sur l'hôte
 networks:
+  webapp-net:
   glitchtip-net:
   umami-net:
 
 # Volumes persistants (les données survivent à `docker compose down`)
 volumes:
+  webapp-pg-data:
   glitchtip-pg-data:
   glitchtip-redis-data:
   glitchtip-uploads:
