@@ -4,23 +4,34 @@
   "private": true,
   "type": "module",
   "scripts": {
-    "build": "node build.mjs",
-    "dev": "concurrently -n esbuild,server -c blue,green \"node build.mjs --watch\" \"tsx watch server/index.ts\"",
+    "build": "node build.mjs && tailwindcss -i src/styles.css -o dist/assets/styles.css --minify",
+    "dev": "concurrently -n esbuild,css,server -c blue,magenta,green \"node build.mjs --watch\" \"tailwindcss -i src/styles.css -o dist/assets/styles.css --watch\" \"tsx watch server/index.ts\"",
     "start": "npm run build && tsx server/index.ts",
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@faker-js/faker": "^10.5.0",
+    "bcryptjs": "^3.0.3",
+    "connect-pg-simple": "^10.0.0",
     "express": "^5.1.0",
+    "express-session": "^1.19.0",
+    "pg": "^8.22.0",
     "react": "^19.1.0",
-    "react-dom": "^19.1.0"
+    "react-dom": "^19.1.0",
+    "react-router-dom": "^7.18.1"
   },
   "devDependencies": {
+    "@tailwindcss/cli": "^4.3.3",
+    "@types/connect-pg-simple": "^7.0.3",
     "@types/express": "^5.0.1",
+    "@types/express-session": "^1.19.0",
     "@types/node": "^22.15.0",
+    "@types/pg": "^8.20.0",
     "@types/react": "^19.1.0",
     "@types/react-dom": "^19.1.0",
     "concurrently": "^9.1.2",
     "esbuild": "^0.25.4",
+    "tailwindcss": "^4.3.3",
     "tsx": "^4.19.4",
     "typescript": "^5.8.3"
   }
