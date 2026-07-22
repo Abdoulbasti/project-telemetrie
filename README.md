@@ -7,6 +7,8 @@ Infrastructure Docker complète pour la télémétrie d'un site e-commerce : app
 ```
                         ┌───────────────────────────────┐
    Navigateur ────────► │  web (React + Express + TS)   │  :8397
+                        │  🌿 Fleurie (tunnel d'achat)  │
+                        │  └─ webapp-postgres 16.8      │   (réseau webapp-net)
                         └───────────────────────────────┘
                         ┌───────────────────────────────┐
    Erreurs (SDK) ─────► │  GlitchTip                    │  :8398
@@ -23,7 +25,7 @@ Infrastructure Docker complète pour la télémétrie d'un site e-commerce : app
 
 | Service | URL | Rôle |
 |---|---|---|
-| Application web | http://localhost:8397 | Site e-commerce (React + Express + TypeScript, bundlé par esbuild) |
+| Application web | http://localhost:8397 | Boutique de fleurs 🌿 Fleurie (React + Express + TypeScript, bundlé par esbuild, PostgreSQL dédié) |
 | GlitchTip | http://localhost:8398 | Suivi des erreurs (PostgreSQL dédié + Redis pour les tâches de fond) |
 | Umami | http://localhost:8399 | Analytics (PostgreSQL dédié) |
 
@@ -58,18 +60,57 @@ Tous les services doivent être `running` (`healthy` pour les bases) — sauf `g
 
 - **GlitchTip** (http://localhost:8398) : créer un compte via « Register » (l'inscription ouverte est activée pour le premier compte), puis créer une organisation et un projet.
 - **Umami** (http://localhost:8399) : se connecter avec `admin` / `umami`, **changer immédiatement le mot de passe**, puis ajouter le site à suivre.
-- **Application web** (http://localhost:8397) : page placeholder — le tunnel d'achat sera développé dans la prochaine phase.
+- **Application web** (http://localhost:8397) : boutique de fleurs avec tunnel d'achat complet — voir ci-dessous.
+
+## 🌿 Fleurie — le tunnel d'achat
+
+### Comptes de démonstration
+
+Les utilisateurs sont pré-inscrits (seed automatique au premier démarrage). Mot de passe commun : **`Fleurs2026!`**
+
+| Email | Nom |
+|---|---|
+| `marie@fleurs.shop` | Marie Dupont |
+| `thomas@fleurs.shop` | Thomas Martin |
+| `emma@fleurs.shop` | Emma Bernard |
+
+### Étapes du tunnel
+
+| Étape | Parcours dans l'app | API |
+|---|---|---|
+| `login` | Connexion avec un compte démo (session Express stockée en base) | `POST /api/login` |
+| `view_product` | Clic sur une des 15 fleurs du catalogue → fiche produit | `GET /api/products/:id` |
+| `add_to_cart` | « Ajouter au panier » depuis la fiche | `POST /api/cart/items` |
+| `checkout_start` | « Passer la commande » depuis le panier → formulaire livraison/paiement (commande `pending` créée) | `POST /api/checkout/start` |
+| `checkout_success` | « Payer » → loader ~2,5 s → page de confirmation (commande `paid`, panier vidé) | `POST /api/checkout/pay` |
+
+Le catalogue de 15 fleurs est généré au premier démarrage avec **@faker-js/faker** (graine fixe : catalogue reproductible). Chaque variété affiche une vraie photo d'elle-même via LoremFlickr (mot-clé anglais par fleur, photo figée par un `lock` généré par faker).
+
+### ⚠️ Pannes volontaires pour la télémétrie
+
+Deux pannes sont simulées exprès afin de valider la remontée d'alertes dans GlitchTip (phase suivante) :
+
+| Étape | Fréquence | Type d'erreur | Où l'observer |
+|---|---|---|---|
+| « Passer la commande » (`checkout_start`) | **1 fois sur 2** | Erreur **serveur** : exception Express → HTTP 500, aucune commande créée | `docker compose logs web` (stack « Échec simulé du service de commande ») |
+| « Payer » (`checkout_success`) | **1 fois sur 3** | Erreur **navigateur** : `TypeError` dans une promesse non catchée (`unhandledrejection`) | Console du navigateur |
+
+Dans les deux cas, l'interface affiche un message d'erreur et l'utilisateur peut simplement réessayer — aucune donnée n'est perdue (la commande reste `pending` côté paiement).
+
+### Base de données du tunnel (webapp-postgres)
+
+`users` → `carts` → `cart_items` → `products`, et `orders` → `order_items` (prix figés au checkout). Les sessions Express sont également persistées en base (table `session`). Interface : blanc/noir/vert, responsive, dark mode (toggle 🌙 dans le header, persisté).
 
 ## Structure du projet
 
 ```
-├── compose.yml         # Orchestration des 8 conteneurs (3 pôles)
+├── compose.yml         # Orchestration des 9 conteneurs (3 pôles)
 ├── .env.example        # Modèle des variables d'environnement (secrets)
 ├── web/                # Application React + Express + TypeScript
 │   ├── Dockerfile      #   multi-stage : target `dev` (watch) et `prod`
 │   ├── build.mjs       #   bundling du client React avec esbuild
-│   ├── server/         #   serveur Express (port 8397)
-│   └── src/            #   code React
+│   ├── server/         #   serveur Express : sessions, API du tunnel, schema.sql, seed
+│   └── src/            #   React : pages du tunnel, contexts, Tailwind (styles.css)
 ├── glitchtip/          # (phase suivante) config et scripts GlitchTip
 └── umami/              # (phase suivante) config et scripts Umami
 ```
@@ -80,6 +121,7 @@ Les données survivent aux redémarrages grâce aux volumes nommés :
 
 | Volume | Contenu |
 |---|---|
+| `webapp-pg-data` | Base PostgreSQL de la boutique (utilisateurs, produits, paniers, commandes, sessions) |
 | `glitchtip-pg-data` | Base PostgreSQL de GlitchTip (comptes, projets, erreurs) |
 | `glitchtip-redis-data` | File des tâches de fond Redis |
 | `glitchtip-uploads` | Fichiers uploadés dans GlitchTip |
