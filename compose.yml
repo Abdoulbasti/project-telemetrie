@@ -1,0 +1,154 @@
+name: projet-telemetrie
+
+# Variables partagées par les 3 conteneurs GlitchTip (web, worker, migrate)
+x-glitchtip-env: &glitchtip-env
+  DATABASE_URL: postgres://glitchtip:${GLITCHTIP_DB_PASSWORD}@glitchtip-postgres:5432/glitchtip
+  REDIS_URL: redis://glitchtip-redis:6379/0
+  SECRET_KEY: ${GLITCHTIP_SECRET_KEY}
+  GLITCHTIP_DOMAIN: http://localhost:8398
+  EMAIL_URL: consolemail://
+  ENABLE_OPEN_USER_REGISTRATION: "True"
+
+services:
+  # ==========================================================
+  # Application Web (React + Express + TypeScript) — port 8397
+  # ==========================================================
+  web:
+    build:
+      context: ./web
+      target: dev
+    container_name: telemetrie-web
+    ports:
+      - "8397:8397"
+    volumes:
+      - ./web:/app
+      - /app/node_modules
+    restart: unless-stopped
+
+  # ==========================================================
+  # GlitchTip (suivi des erreurs) — port 8398
+  # ==========================================================
+  glitchtip-postgres:
+    image: postgres:16.8-alpine
+    container_name: glitchtip-postgres
+    environment:
+      POSTGRES_USER: glitchtip
+      POSTGRES_PASSWORD: ${GLITCHTIP_DB_PASSWORD}
+      POSTGRES_DB: glitchtip
+    volumes:
+      - glitchtip-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U glitchtip -d glitchtip"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [glitchtip-net]
+    restart: unless-stopped
+
+  glitchtip-redis:
+    image: redis:7-alpine
+    container_name: glitchtip-redis
+    volumes:
+      - glitchtip-redis-data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [glitchtip-net]
+    restart: unless-stopped
+
+  # Applique les migrations de schéma puis s'arrête (exit 0)
+  glitchtip-migrate:
+    image: glitchtip/glitchtip:v5.1
+    container_name: glitchtip-migrate
+    command: ./bin/run-migrate.sh
+    environment: *glitchtip-env
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_healthy
+    networks: [glitchtip-net]
+    restart: "no"
+
+  glitchtip-web:
+    image: glitchtip/glitchtip:v5.1
+    container_name: glitchtip-web
+    ports:
+      - "8398:8080"
+    environment: *glitchtip-env
+    volumes:
+      - glitchtip-uploads:/code/uploads
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_healthy
+      glitchtip-migrate:
+        condition: service_completed_successfully
+    networks: [glitchtip-net]
+    restart: unless-stopped
+
+  # Worker Celery : tâches de fond (alertes, agrégations) via Redis
+  glitchtip-worker:
+    image: glitchtip/glitchtip:v5.1
+    container_name: glitchtip-worker
+    command: ./bin/run-celery-with-beat.sh
+    environment: *glitchtip-env
+    depends_on:
+      glitchtip-postgres:
+        condition: service_healthy
+      glitchtip-redis:
+        condition: service_healthy
+      glitchtip-migrate:
+        condition: service_completed_successfully
+    networks: [glitchtip-net]
+    restart: unless-stopped
+
+  # ==========================================================
+  # Umami (analytics) — port 8399
+  # ==========================================================
+  umami-postgres:
+    image: postgres:16.8-alpine
+    container_name: umami-postgres
+    environment:
+      POSTGRES_USER: umami
+      POSTGRES_PASSWORD: ${UMAMI_DB_PASSWORD}
+      POSTGRES_DB: umami
+    volumes:
+      - umami-pg-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U umami -d umami"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks: [umami-net]
+    restart: unless-stopped
+
+  umami:
+    image: ghcr.io/umami-software/umami:postgresql-latest
+    container_name: umami
+    ports:
+      - "8399:3000"
+    environment:
+      DATABASE_URL: postgresql://umami:${UMAMI_DB_PASSWORD}@umami-postgres:5432/umami
+      DATABASE_TYPE: postgresql
+      APP_SECRET: ${UMAMI_APP_SECRET}
+    depends_on:
+      umami-postgres:
+        condition: service_healthy
+    networks: [umami-net]
+    restart: unless-stopped
+
+# Réseaux isolés : les bases de données ne sont jamais exposées sur l'hôte
+networks:
+  glitchtip-net:
+  umami-net:
+
+# Volumes persistants (les données survivent à `docker compose down`)
+volumes:
+  glitchtip-pg-data:
+  glitchtip-redis-data:
+  glitchtip-uploads:
+  umami-pg-data:
