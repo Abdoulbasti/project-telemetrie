@@ -1,35 +1,27 @@
-const styles = {
-  page: {
-    minHeight: "100vh",
-    display: "flex",
-    flexDirection: "column" as const,
-    alignItems: "center",
-    justifyContent: "center",
-    gap: "1rem",
-    fontFamily: "system-ui, -apple-system, sans-serif",
-    background: "#0f172a",
-    color: "#e2e8f0",
-    margin: 0,
-  },
-  badge: {
-    padding: "0.25rem 0.75rem",
-    borderRadius: "999px",
-    background: "#1e293b",
-    color: "#38bdf8",
-    fontSize: "0.85rem",
-  },
-  title: { fontSize: "2rem", margin: 0 },
-  subtitle: { color: "#94a3b8", margin: 0 },
-};
+import { Route, Routes } from "react-router-dom";
+import { Layout } from "./components/Layout";
+import { ProtectedRoute } from "./components/ProtectedRoute";
+import { CartPage } from "./pages/CartPage";
+import { CheckoutPage } from "./pages/CheckoutPage";
+import { ConfirmationPage } from "./pages/ConfirmationPage";
+import { LoginPage } from "./pages/LoginPage";
+import { ProductPage } from "./pages/ProductPage";
+import { ProductsPage } from "./pages/ProductsPage";
 
+// Tunnel d'achat : login → view_product → add_to_cart → checkout_start → checkout_success
 export default function App() {
   return (
-    <main style={styles.page}>
-      <span style={styles.badge}>Infrastructure opérationnelle ✓</span>
-      <h1 style={styles.title}>🛒 E-Shop Télémétrie</h1>
-      <p style={styles.subtitle}>
-        Le tunnel d&apos;achat sera développé dans la prochaine phase.
-      </p>
-    </main>
+    <Routes>
+      <Route path="/login" element={<LoginPage />} />
+      <Route element={<ProtectedRoute />}>
+        <Route element={<Layout />}>
+          <Route index element={<ProductsPage />} />
+          <Route path="products/:id" element={<ProductPage />} />
+          <Route path="cart" element={<CartPage />} />
+          <Route path="checkout" element={<CheckoutPage />} />
+          <Route path="confirmation/:orderId" element={<ConfirmationPage />} />
+        </Route>
+      </Route>
+    </Routes>
   );
 }
