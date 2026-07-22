@@ -1,1 +1,4 @@
 sujet-telemetrie.pdf
+.env
+node_modules/
+web/dist/
